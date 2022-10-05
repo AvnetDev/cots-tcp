@@ -3631,17 +3631,34 @@ int processJsonCommand(void)
 	} //parse_json_message problem
 } //processJsonCommand
 
+// These are used to allow a cmd line option for the file path search
+static unsigned useCmdLinePath = 0;
+static const char * jsonCfgPath = "";
+
 static int LoadJsonConfigFile(void)
 {
     FILE *fptr;
     int ilinenumber = 0;
-	char pathname[50];
+	char pathname[500];
 	char cfirstcharinline;
 	//char userfilename[50];
-	char ConfigFilename[64];
+	char ConfigFilename[514];
 	unsigned char bjson_error = false;
 	 //For now, assume we have a We have a ZCU208, not a ZCU111
-	sprintf(pathname, PATH_FILENAME_ZCU208);
+	if (useCmdLinePath == 0) {
+		sprintf(pathname,"%s", PATH_FILENAME_ZCU208);
+	}
+	else {
+		int nCfgPath = strlen(jsonCfgPath);
+		// '=' to leave room for \0
+		if (nCfgPath >= sizeof(pathname)/sizeof(pathname[0])) {
+			printf("\nError: JSON config file path name is to long!\n");
+			exit(-1);
+		} else {
+			printf("New path name length is: %d\n", nCfgPath);
+		}
+		sprintf(pathname, "%s", jsonCfgPath);
+	}
 	sprintf(ConfigFilename, "%s%s", pathname, INITCFG_JSON_FILENAME_DEFAULT);
 	printf("Opening file %s\n", ConfigFilename);
     if ((fptr = fopen(ConfigFilename, "r")) == NULL)
@@ -3680,7 +3697,7 @@ unsigned parseCmdLine(int argc, char ** argv)
 	if (argc == 1)
 		return (0);
 
-	if (argc == 3 || argc == 5 || argc == 7) {
+	if (argc == 3 || argc == 5 || argc == 7 || argc == 9) {
 		for(unsigned i=1; i<argc; i+=2) {
 			if (argv[i][1] == 'p') {
 				port = atoi(argv[i+1]);
@@ -3692,16 +3709,22 @@ unsigned parseCmdLine(int argc, char ** argv)
 			}
 			else if (argv[i][1] == 'i') {
 				I2C_FILE_NAME = argv[i+1];
-				printf("Setting up to use I2C expander device name: %s\n",I2C_FILE_NAME);
+				printf("Setting up to use I2C expander device name: %s\n", I2C_FILE_NAME);
+			}
+			else if (argv[i][1] == 'd') {
+				useCmdLinePath = 1;
+				jsonCfgPath = argv[i+1];
+				printf("Look for JSON init cfg file here: %s\n", jsonCfgPath);
 			}
 		}
 		return (port);
 	}
 
-	printf("Usage: cots-tcp [-p <tcp port number> -s <SPI device name> -i <I2C device string>]\n");
+	printf("Usage: cots-tcp [-p <tcp port number> -s <SPI device name> -i <I2C device string> -d <path of JSON cfg file>]\n");
 	printf("\nIf -p option is given program will take input from tcp port vs. stdin\n");
 	printf("If -s option is given that device name for the SPI Device used to control the DTRX will be used\n");
 	printf("If -i option is given that device name for the I2C Expander Device will be used\n");
+	printf("If -d option is given it will be used for the path to find the JSON Init Config file. Make sure you add final '/'\n");
 	exit(-1);
 
 	return (0);
@@ -3742,6 +3765,10 @@ int main(int argc, char **argv)
 		expander_OK = true;
 	}
 
+	otavaTcpPort = parseCmdLine(argc, argv);
+	if (otavaTcpPort != 0)
+		tcp_mode = 1;
+
 	//Perform initialization JSON commands from a .cfg file, if it exists:
 	iconfigfile_error = LoadJsonConfigFile();
 	if (iconfigfile_error < 0)
@@ -3752,10 +3779,6 @@ int main(int argc, char **argv)
 	{
 		printf("Config file error on line %i.\n", iconfigfile_error);
 	}
-
-	otavaTcpPort = parseCmdLine(argc, argv);
-	if (otavaTcpPort != 0)
-		tcp_mode = 1;
 
 	int socket_fd;
 	if (tcp_mode == 1)
