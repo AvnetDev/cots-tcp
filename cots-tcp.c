@@ -92,7 +92,6 @@ unsigned long host_value_long;
 unsigned char * host_value_ucptr;
 int  host_value_len;
 float  host_value_float;
-float  host_value_float1;
 float  host_value_float2;
 float  host_value_float3;
 char host_value_string[32];
@@ -2312,8 +2311,8 @@ void ReportStatus(void)
 	{
 		tcp_printf("{\"rsp\": \"ConfigFileErrorStatus\",\"value_int\": \"%d\"}", iconfigfile_error);
 	}
-	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float1\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz);
-	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float1\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz);
+	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz);
+	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz);
 } //ReportStatus
 
 void PowerTxPath(int ipower_on)
@@ -3014,7 +3013,6 @@ int parse_json_message(const char * const monitor)
     const cJSON *value_int2 = NULL;
     const cJSON *value_long = NULL;
     const cJSON *value_float = NULL;
-    const cJSON *value_float1 = NULL;
     const cJSON *value_float2 = NULL;
     const cJSON *value_float3 = NULL;
     const cJSON *value_len = NULL;
@@ -3153,12 +3151,6 @@ int parse_json_message(const char * const monitor)
     {
     	sprintf (input_string, "%s", value_float->valuestring);
     	host_value_float = (atof(input_string));
-    }
-    value_float1 = cJSON_GetObjectItemCaseSensitive(message_json, "value_float1");
-    if (cJSON_IsString(value_float1) && (value_float1->valuestring != NULL))
-    {
-    	sprintf (input_string, "%s", value_float1->valuestring);
-    	host_value_float1 = (atof(input_string));
     }
     value_float2 = cJSON_GetObjectItemCaseSensitive(message_json, "value_float2");
     if (cJSON_IsString(value_float2) && (value_float2->valuestring != NULL))
@@ -3384,7 +3376,7 @@ int processJsonCommand(void)
 			{
 				fTxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
-			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, host_value_float1);
+			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, host_value_float);
 			fTxPllFreqRF_GHz = host_value_float2;
 			fTxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetTxPllFreq"
@@ -3399,7 +3391,7 @@ int processJsonCommand(void)
 			{
 				fRxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
-			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, host_value_float1);
+			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, host_value_float);
 			fRxPllFreqRF_GHz = host_value_float2;
 			fRxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetRxPllFreq"
