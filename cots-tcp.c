@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 23
+#define PS_VERSION_LSB 24
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
@@ -210,6 +210,10 @@ int bSoftwareLed_set = false;
 
 /* Global shared with expander.c */
 char * I2C_FILE_NAME = "/dev/i2c-22";  // Default for Petalinux 2020.2 ZCU208 DTRX bsp
+
+// These are used to allow a cmd line option for the file path search
+static unsigned useCmdLinePath = 0;
+static const char * rootCfgPath = "";
 
 void string_to_host( char* stringtosend)
 {
@@ -1207,19 +1211,32 @@ static int LoadPllFile(int fd, int get_user_input, unsigned int echo, unsigned c
     FILE *fptr;
     int linenumber = 0;
     char line[256]; /* or other suitable maximum line size */
-	char pathname[50];
-	char userfilename[80];
-	char filename_found[80];
-	char PLLfilename[256];
+	char pathname[500];
+	char userfilename[530];
+	char filename_found[530];
+	char PLLfilename[1030];  // This could contain both pathname + filename_found or userfilename + pathname
 
-	if (PlVersionMSB < 3)
-	{ //We have a ZCU111
-		sprintf(pathname, PATH_FILENAME_ZCU111);
+	if (useCmdLinePath == 0) {
+		if (PlVersionMSB < 3)
+		{ //We have a ZCU111
+			sprintf(pathname, PATH_FILENAME_ZCU111);
+		}
+		else
+		{ //We have a ZCU208
+			sprintf(pathname, PATH_FILENAME_ZCU208);
+		}
+	} else {
+		int nCfgPath = strlen(rootCfgPath);
+		// '=' to leave room for \0
+		if (nCfgPath >= sizeof(pathname)/sizeof(pathname[0])) {
+			printf("\nError: PLL config file path name is to long!\n");
+			exit(-1);
+		} else {
+			printf("New PLL config path name length is: %d\n", nCfgPath);
+		}
+		sprintf(pathname, "%s", rootCfgPath);
 	}
-	else
-	{ //We have a ZCU208
-		sprintf(pathname, PATH_FILENAME_ZCU208);
-	}
+
 	if (get_user_input)
 	{
 		//printf("Enter the file name to load (or just enter 'x' for HexRegisterValues.txt): \n");
@@ -1256,7 +1273,22 @@ static int LoadPllFile(int fd, int get_user_input, unsigned int echo, unsigned c
 		}
 		else
 		{
-			sprintf(PLLfilename, "/run/media/mmcblk0p1/%s", userfilename);
+			// This is assuming ZCU111 board here.  It is a little bug but leaving it as it was before
+			//  mods to enable dynamic path names.  This assumes this feature is not used for ZCU208.
+			//  Will log it as minor issue in github, should be issue #1
+			if (useCmdLinePath == 0) {
+				sprintf(PLLfilename, "/run/media/mmcblk0p1/%s", userfilename);
+			} else {
+				int nCfgPath = strlen(rootCfgPath);
+				// '=' to leave room for \0
+				if (nCfgPath >= sizeof(PLLfilename)/sizeof(PLLfilename[0])) {
+					printf("\nError: PLLfilename config file path name is to long!\n");
+					exit(-1);
+				} else {
+					printf("New PLLfilename config path name length is: %d\n", nCfgPath);
+				}
+				sprintf(PLLfilename, "%s%s", rootCfgPath, userfilename);
+			}
 		}
 	}
 	else
@@ -1505,15 +1537,27 @@ static int LoadPllParams(int fd, unsigned char command)
     FILE *fptr;
     int linenumber = 0;
     char line[256]; /* or other suitable maximum line size */
-	char pathname[50];
-	char paramsfilename[80];
-	if (PlVersionMSB > 2)
-	{ //We have a ZCU208
-		sprintf(pathname, PATH_FILENAME_ZCU208);
-	}
-	else
-	{ //We have a ZCU111
-		sprintf(pathname, PATH_FILENAME_ZCU111);
+	char pathname[500];
+	char paramsfilename[530];
+	if (useCmdLinePath == 0) {
+		if (PlVersionMSB > 2)
+		{ //We have a ZCU208
+			sprintf(pathname, PATH_FILENAME_ZCU208);
+		}
+		else
+		{ //We have a ZCU111
+			sprintf(pathname, PATH_FILENAME_ZCU111);
+		}
+	} else {
+		int nCfgPath = strlen(rootCfgPath);
+		// '=' to leave room for \0
+		if (nCfgPath >= sizeof(pathname)/sizeof(pathname[0])) {
+			printf("\nError: PLL config file path name is to long!\n");
+			exit(-1);
+		} else {
+			printf("New PLL config path name length is: %d\n", nCfgPath);
+		}
+		sprintf(pathname, "%s", rootCfgPath);
 	}
 	sprintf(paramsfilename, "%s%s", pathname, FILENAME_PLL_PARAMETERS);
 	printf("Opening file %s\n", paramsfilename);
@@ -3631,10 +3675,6 @@ int processJsonCommand(void)
 	} //parse_json_message problem
 } //processJsonCommand
 
-// These are used to allow a cmd line option for the file path search
-static unsigned useCmdLinePath = 0;
-static const char * jsonCfgPath = "";
-
 static int LoadJsonConfigFile(void)
 {
     FILE *fptr;
@@ -3647,9 +3687,8 @@ static int LoadJsonConfigFile(void)
 	 //For now, assume we have a We have a ZCU208, not a ZCU111
 	if (useCmdLinePath == 0) {
 		sprintf(pathname,"%s", PATH_FILENAME_ZCU208);
-	}
-	else {
-		int nCfgPath = strlen(jsonCfgPath);
+	} else {
+		int nCfgPath = strlen(rootCfgPath);
 		// '=' to leave room for \0
 		if (nCfgPath >= sizeof(pathname)/sizeof(pathname[0])) {
 			printf("\nError: JSON config file path name is to long!\n");
@@ -3657,7 +3696,7 @@ static int LoadJsonConfigFile(void)
 		} else {
 			printf("New path name length is: %d\n", nCfgPath);
 		}
-		sprintf(pathname, "%s", jsonCfgPath);
+		sprintf(pathname, "%s", rootCfgPath);
 	}
 	sprintf(ConfigFilename, "%s%s", pathname, INITCFG_JSON_FILENAME_DEFAULT);
 	printf("Opening file %s\n", ConfigFilename);
@@ -3689,13 +3728,28 @@ static int LoadJsonConfigFile(void)
 	}
 } //LoadJsonConfigFile()
 
+void print_usage(void) {
+	printf("Usage: cots-tcp -p <tcp port number> [-s <SPI device name> -i <I2C device string> -d <path of cfg files>]\n");
+	printf("\nThe -p option is not optional, you must supply a TCP/IP port number. -s -i -d arguments are optional.\n");
+	printf("If -s is given that device name for the SPI Device used to control the DTRX will be used.\n");
+	printf("If -i is given that device name for the I2C Expander Device will be used.\n");
+	printf("If -d is given it will be used for the root path to find various config files. Make sure you add final '/'.\n\n");
+	printf("Example: cots-tcp -p 8083 -s /dev/spidev1.0 -i /dev/i2c-22 -d /opt/dtrx2\n\n");
+	printf("For ZCU208 if -d is used, off of the base root path these files must exist:\n");
+	printf("           RX_LMX2595*.txt\n");
+	printf("           TX_LMX2595*.txt\n");
+	printf("           dtrx2_init.cfg\n");
+}
+
 unsigned parseCmdLine(int argc, char ** argv)
 {
 	extern char * I2C_FILE_NAME;
 	unsigned port = 0;
 
-	if (argc == 1)
-		return (0);
+	if (argc == 1) {
+		print_usage();
+		exit(-1);
+	}
 
 	if (argc == 3 || argc == 5 || argc == 7 || argc == 9) {
 		for(unsigned i=1; i<argc; i+=2) {
@@ -3713,20 +3767,18 @@ unsigned parseCmdLine(int argc, char ** argv)
 			}
 			else if (argv[i][1] == 'd') {
 				useCmdLinePath = 1;
-				jsonCfgPath = argv[i+1];
-				printf("Look for JSON init cfg file here: %s\n", jsonCfgPath);
+				rootCfgPath = argv[i+1];
+				printf("Look for JSON, RX&Tx PLL init cfg files here: %s\n", rootCfgPath);
 			}
 		}
 		return (port);
 	}
 
-	printf("Usage: cots-tcp [-p <tcp port number> -s <SPI device name> -i <I2C device string> -d <path of JSON cfg file>]\n");
-	printf("\nIf -p option is given program will take input from tcp port vs. stdin\n");
-	printf("If -s option is given that device name for the SPI Device used to control the DTRX will be used\n");
-	printf("If -i option is given that device name for the I2C Expander Device will be used\n");
-	printf("If -d option is given it will be used for the path to find the JSON Init Config file. Make sure you add final '/'\n");
+	printf("Please specify the TCP/IP port using the -p option!!!\n");
+	print_usage();
 	exit(-1);
 
+	// return will never be reached due to exit()
 	return (0);
 }
 
@@ -3744,6 +3796,10 @@ int main(int argc, char **argv)
 	ulRxPllDemominator = DEN_DEFAULT;
 	ulTxPllDemominator = DEN_DEFAULT;
 	ulFpfd = Fpd_DEFAULT;
+
+	// parseCmdLine(..) can modify device names and paths and must
+	//  be called before opening the SPI or I2C devices etc.
+	otavaTcpPort = parseCmdLine(argc, argv);
 
 	spi_fd = initializeSpiDevice();
 
@@ -3765,10 +3821,6 @@ int main(int argc, char **argv)
 		expander_OK = true;
 	}
 
-	otavaTcpPort = parseCmdLine(argc, argv);
-	if (otavaTcpPort != 0)
-		tcp_mode = 1;
-
 	//Perform initialization JSON commands from a .cfg file, if it exists:
 	iconfigfile_error = LoadJsonConfigFile();
 	if (iconfigfile_error < 0)
@@ -3779,6 +3831,9 @@ int main(int argc, char **argv)
 	{
 		printf("Config file error on line %i.\n", iconfigfile_error);
 	}
+
+	if (otavaTcpPort != 0)
+		tcp_mode = 1;
 
 	int socket_fd;
 	if (tcp_mode == 1)
