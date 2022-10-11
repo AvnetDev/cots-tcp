@@ -1387,6 +1387,8 @@ static int ReadEntirePll(int fd, unsigned char command, int include_address)
 } //ReadEntirePll()
 
 float Fvco_actual;
+float TxFvco_actual = -1.0;
+float RxFvco_actual = -1.0;
 #define Fpd_DEFAULT 122880000 //Hz
 unsigned long ulFpfd;
 //#define DEN_DEFAULT 768
@@ -2355,8 +2357,8 @@ void ReportStatus(void)
 	{
 		tcp_printf("{\"rsp\": \"ConfigFileErrorStatus\",\"value_int\": \"%d\"}", iconfigfile_error);
 	}
-	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz);
-	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz);
+	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz, TxFvco_actual);
+	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz, RxFvco_actual);
 } //ReportStatus
 
 void PowerTxPath(int ipower_on)
@@ -2644,14 +2646,14 @@ void ChangePllFrequency(char cPll, float Fpfd, float Fvco)
 	}
 	if (cPll == 'T') //Tx PLL
 	{
-		//tcp_printf("{\"rsp\": \"TxPllFrequency\",\"value_float\": \"%.1f\"}", Fvco_actual);
 		tcp_printf("{\"rsp\": \"TxPllFrequency\",\"value_int\": \"%d\",\"value_float\": \"%.1f\"}", ulTxPllDemominator, Fvco_actual);
+		TxFvco_actual = Fvco_actual;
 		ReportTxPllStatus();
 	}
 	else //Rx PLL
 	{
-		//tcp_printf("{\"rsp\": \"RxPllFrequency\",\"value_float\": \"%.1f\"}", Fvco_actual);
 		tcp_printf("{\"rsp\": \"RxPllFrequency\",\"value_int\": \"%d\",\"value_float\": \"%.1f\"}", ulRxPllDemominator, Fvco_actual);
+		RxFvco_actual = Fvco_actual;
 		ReportRxPllStatus();
 	}
 } //ChangePllFrequency
