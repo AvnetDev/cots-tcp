@@ -3729,16 +3729,17 @@ static int LoadJsonConfigFile(void)
 } //LoadJsonConfigFile()
 
 void print_usage(void) {
+    printf("PS Version: %d.%d\n\n", PS_VERSION_MSB, PS_VERSION_LSB);
 	printf("Usage: cots-tcp -p <tcp port number> [-s <SPI device name> -i <I2C device string> -d <path of cfg files>]\n");
 	printf("\nThe -p option is not optional, you must supply a TCP/IP port number. -s -i -d arguments are optional.\n");
 	printf("If -s is given that device name for the SPI Device used to control the DTRX will be used.\n");
 	printf("If -i is given that device name for the I2C Expander Device will be used.\n");
 	printf("If -d is given it will be used for the root path to find various config files. Make sure you add final '/'.\n\n");
 	printf("Example: cots-tcp -p 8083 -s /dev/spidev1.0 -i /dev/i2c-22 -d /opt/dtrx2/\n\n");
-	printf("For ZCU208 if -d is used, off of the base root path these files must exist:\n");
+	printf("For ZCU208 if -d is used, off of the base root path these files must exist:\n\n");
 	printf("           RX_LMX2595*.txt\n");
 	printf("           TX_LMX2595*.txt\n");
-	printf("           dtrx2_init.cfg\n");
+	printf("           dtrx2_init.cfg\n\n");
 }
 
 unsigned parseCmdLine(int argc, char ** argv)
