@@ -209,7 +209,7 @@ int bRxCh2BiasEnable_set = false;
 int bSoftwareLed_set = false;
 
 /* Global shared with expander.c */
-char * I2C_FILE_NAME = "/dev/i2c-22";  // Default for Petalinux 2020.2 ZCU208 DTRX bsp
+const char * I2C_FILE_NAME = "/dev/i2c-22";  // Default for Petalinux 2020.2 ZCU208 DTRX bsp
 
 // These are used to allow a cmd line option for the file path search
 static unsigned useCmdLinePath = 0;
@@ -3744,7 +3744,7 @@ void print_usage(void) {
 
 unsigned parseCmdLine(int argc, char ** argv)
 {
-	extern char * I2C_FILE_NAME;
+	extern const char * I2C_FILE_NAME;
 	unsigned port = 0;
 
 	if (argc == 1) {
