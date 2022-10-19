@@ -75,7 +75,7 @@ int write_expander(u8 command, u8 value_port0, u8 value_port1)
 
 int expander_init()
 {
-    extern char * I2C_FILE_NAME;
+    extern const char * I2C_FILE_NAME;
     // Open a connection to the I2C userspace control file.
     if ((i2c_file = open(I2C_FILE_NAME, O_RDWR)) < 0)
     {

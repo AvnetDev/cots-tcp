@@ -120,6 +120,7 @@ int zed_iic_axi_IicERead ( zed_iic_t *pIIC, uint8_t ChipAddress, uint16_t RegAdd
 ******************************************************************************/
 int zed_iic_axi_init( zed_iic_t *pIIC, char szName[], uint32_t CoreAddress )
 {
+   extern const char * I2C_FILE_NAME;
    zed_iic_axi_t *pContext = (zed_iic_axi_t *) (pIIC->ContextBuffer);
    if ( sizeof(zed_iic_axi_t) > ZED_IIC_CONTEXT_BUFFER_SIZE )
    {
@@ -127,7 +128,7 @@ int zed_iic_axi_init( zed_iic_t *pIIC, char szName[], uint32_t CoreAddress )
       return 0;
    }
 
-   pContext->Fdiic = open("/dev/i2c-22", O_RDWR);
+   pContext->Fdiic = open(I2C_FILE_NAME, O_RDWR);
    assert(pContext->Fdiic >= 0);
 
    /*
