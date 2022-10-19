@@ -630,6 +630,7 @@ unsigned int power(int base, int exponent)
 int RxAttenuation_dB_to_bits(float fchoice)
 {
 	int iresult;
+	printf("Rx attenuator set to ");
 	if (fchoice < 1)
 	{
 		iresult = 0x51; //State 0 = 0dB
@@ -684,6 +685,7 @@ int RxAttenuation_dB_to_bits(float fchoice)
 int TxAttenuation_dB_to_bits(float fchoice)
 {
 	int iresult;
+	printf("Tx attenuator set to ");
 	//On the ZCU111 only 6 of the 8 bits are used (2dB resolution), while on the ZCU208 all 8 bits are used (0.5dB resolution)
 	if (PlVersionMSB < 3)
 	{ //We have a ZCU111
@@ -929,7 +931,7 @@ int TxAttenuation_dB_to_bits(float fchoice)
 		   case 31:
 		   {
 			   iresult = 0xAE; //State 31 = 15.5dB
-			   printf("0 dB\n");
+			   printf("15.5 dB\n");
 			   break;
 		   }
 	       default:
