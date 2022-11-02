@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 25
+#define PS_VERSION_LSB 26
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
@@ -70,7 +70,7 @@ int tcpServerInit(struct sockaddr_in * otava_address, unsigned tcpPort);
 int waitClientConnect(int socket_fd, struct sockaddr_in * otava_address);
 void closeSocket(int new_socket);
 int getTcpCmdString(int new_socket, char ** cmd_type, char ** cmd_value);
-
+int ReadEeprom_Multiple(unsigned char ucEeprom_addr, unsigned char * ucEeprom_value, int len);
 
 //#define MAX_OTAVA_CMD_LENGTH 256
 
@@ -2701,6 +2701,99 @@ void ChangePllPower(char cPll, unsigned char OutAEnable, int PowerA,  unsigned c
 	}
 } //ChangePllPower
 
+int GetPllPowerFromFreq(unsigned char ucOUTX_enabled, float ffrequency_achievedHz)
+{
+unsigned char ucBoardIsRevB;
+float ffrequency_achievedGHz = ffrequency_achievedHz / 1000000000;
+int ipower;
+	if (ucOUTX_enabled == 0) //enabled
+	{
+   		//Read the EEPROM to decide whether we have a RevB board
+		host_value_ucptr = host_value_string;
+		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, 1) ==0)
+		{
+			if (host_value_string == "RevB")
+			{
+				ucBoardIsRevB = true;
+			}
+			else
+			{
+				ucBoardIsRevB = false; //Rev A assumed
+			}
+			//tcp_printf("{\"rsp\": \"EepromBoardRevision\",\"value_string\": \"%s\"}", host_value_string);
+		}
+		else
+		{ //EEPROM error
+			ucBoardIsRevB = false; //Rev A assumed
+		} //EEPROM error
+		if (ucBoardIsRevB)
+		{ //RevB
+			if (ffrequency_achievedGHz <= 12.0)
+			{
+				ipower = 20;
+			}
+			else if (ffrequency_achievedGHz < 12.65)
+			{
+				ipower = 5;
+			}
+			else if (ffrequency_achievedGHz > 13.65)
+			{
+				ipower = 15;
+			}
+			else
+			{
+				float fpower = 10 * ffrequency_achievedGHz - 121.5;
+				ipower = (int)(fpower + 0.5); //Round to closest integer by adding 0.5 and truncating
+			}
+		} //RevB
+		else
+		{ //not RevB (assumed RevA)
+			if (ffrequency_achievedGHz < 12.1)
+			{
+				ipower = 20;
+			}
+			else if (ffrequency_achievedGHz <= 12.9)
+			{
+				ipower = 5;
+			}
+			else
+			{
+				ipower = 15;
+			}
+		} //not RevB (assumed RevA)
+	} //ucOUTX_enabled
+	else
+	{ //ucOUTX_enabled == 1 (not enabled)
+		ipower = 0;
+	} //ucOUTX_enabled == 1 (not enabled)
+    return ipower;
+} //GetPllPowerFromFreq
+
+int ChangePllPowerAuto(char cPll, unsigned char OutAEnable, unsigned char OutBEnable)
+{
+	int PowerA, PowerB;
+	//First check if the frequency has already been set:
+	if (cPll == 'T') //Tx PLL
+	{
+		Fvco_actual = TxFvco_actual;
+	}
+	else //Rx PLL
+	{
+		Fvco_actual = RxFvco_actual;
+	}
+	if (Fvco_actual == -1.0)
+	{ //It has not been set yet
+	    printf("**** Error! Fvco_actual must be set before the PLL power can be auto-changed ****\n");
+	    return false;
+	} //It has not been set yet
+
+	//Calculate the power from the frequency
+	PowerA = GetPllPowerFromFreq(OutAEnable, Fvco_actual);
+	PowerB = GetPllPowerFromFreq(OutBEnable, Fvco_actual);
+	ChangePllPower(cPll, OutAEnable, PowerA, OutBEnable, PowerB);
+    return true;
+} //ChangePllPowerAuto
+
 void SetCommsLed(int isetting)
 {
 	iSoftwareLedState = isetting;
@@ -3485,6 +3578,48 @@ int processJsonCommand(void)
 			} //host_setting2 = "disable"
 			ChangePllPower('R', settingA, host_value_int1, settingB, host_value_int2);
 		} //host_cmd = "SetRxPllPower"
+		else if (strcmp(host_cmd, "SetTxPllPowerAuto") == 0)
+		{
+			unsigned char settingA, settingB;
+			if (strcmp(host_setting1, "enable") == 0)
+			{
+				settingA = 0; //do not power down
+			} //host_setting1 = "enable"
+			else
+			{
+				settingA = 1; //power down
+			} //host_setting1 = "disable"
+			if (strcmp(host_setting2, "enable") == 0)
+			{
+				settingB = 0; //do not power down
+			} //host_setting2 = "enable"
+			else
+			{
+				settingB = 1; //power down
+			} //host_setting2 = "disable"
+			ChangePllPowerAuto('T', settingA, settingB);
+		} //host_cmd = "SetTxPllPowerAuto"
+		else if (strcmp(host_cmd, "SetRxPllPowerAuto") == 0)
+		{
+			unsigned char settingA, settingB;
+			if (strcmp(host_setting1, "enable") == 0)
+			{
+				settingA = 0; //do not power down
+			} //host_setting1 = "enable"
+			else
+			{
+				settingA = 1; //power down
+			} //host_setting1 = "disable"
+			if (strcmp(host_setting2, "enable") == 0)
+			{
+				settingB = 0; //do not power down
+			} //host_setting2 = "enable"
+			else
+			{
+				settingB = 1; //power down
+			} //host_setting2 = "disable"
+			ChangePllPowerAuto('R', settingA, settingB);
+		} //host_cmd = "SetRxPllPowerAuto"
 		else if (strcmp(host_cmd, "TxPllWriteRegister") == 0)
 		{
 			WritePllRegister('T', (unsigned char)host_addr, (unsigned int)host_value_int);
