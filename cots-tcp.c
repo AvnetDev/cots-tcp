@@ -2616,7 +2616,7 @@ void ChangePllFrequency(char cPll, float Fpfd, float Fvco)
 	}
 } //ChangePllFrequency
 
-void ChangePllPower(char cPll, unsigned char OutAEnable, int PowerA,  unsigned char OutBEnable, int PowerB)
+void ChangePllPower(char cPll, unsigned char OutAEnable, int PowerA, unsigned char OutBEnable, int PowerB)
 {
 	unsigned char command;
 	unsigned int iOldPLL_value;
@@ -2668,7 +2668,7 @@ int ipower;
 		host_value_ucptr = host_value_string;
 		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, 1) ==0)
 		{
-			if (host_value_string == "RevB")
+			if (strcmp(host_value_string, "RevB") == 0)
 			{
 				ucBoardIsRevB = true;
 			}
