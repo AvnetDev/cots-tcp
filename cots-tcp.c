@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 24
+#define PS_VERSION_LSB 25
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
@@ -91,7 +91,9 @@ int  host_value_int2;
 unsigned long host_value_long;
 unsigned char * host_value_ucptr;
 int  host_value_len;
-float  host_value_float;
+float  host_value_float = -1;
+float  host_value_float2 = -1;
+float  host_value_float3 = -1;
 char host_value_string[32];
 int  host_value_string_len;
 char host_value_string_year[3];
@@ -628,6 +630,7 @@ unsigned int power(int base, int exponent)
 int RxAttenuation_dB_to_bits(float fchoice)
 {
 	int iresult;
+	printf("Rx attenuator set to ");
 	if (fchoice < 1)
 	{
 		iresult = 0x51; //State 0 = 0dB
@@ -682,6 +685,7 @@ int RxAttenuation_dB_to_bits(float fchoice)
 int TxAttenuation_dB_to_bits(float fchoice)
 {
 	int iresult;
+	printf("Tx attenuator set to ");
 	//On the ZCU111 only 6 of the 8 bits are used (2dB resolution), while on the ZCU208 all 8 bits are used (0.5dB resolution)
 	if (PlVersionMSB < 3)
 	{ //We have a ZCU111
@@ -927,7 +931,7 @@ int TxAttenuation_dB_to_bits(float fchoice)
 		   case 31:
 		   {
 			   iresult = 0xAE; //State 31 = 15.5dB
-			   printf("0 dB\n");
+			   printf("15.5 dB\n");
 			   break;
 		   }
 	       default:
@@ -1385,12 +1389,21 @@ static int ReadEntirePll(int fd, unsigned char command, int include_address)
 } //ReadEntirePll()
 
 float Fvco_actual;
+float TxFvco_actual = -1.0;
+float RxFvco_actual = -1.0;
 #define Fpd_DEFAULT 122880000 //Hz
 unsigned long ulFpfd;
 //#define DEN_DEFAULT 768
 #define DEN_DEFAULT 1000
 unsigned long ulRxPllDemominator;
 unsigned long ulTxPllDemominator;
+float fTxPllFreqRF_GHz = -1.0; //Just to store here so the host can recall it if necessary
+float fTxPllFreqIF_GHz = -1.0; //Just to store here so the host can recall it if necessary
+float fRxPllFreqRF_GHz = -1.0; //Just to store here so the host can recall it if necessary
+float fRxPllFreqIF_GHz = -1.0; //Just to store here so the host can recall it if necessary
+float fRxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
+float fTxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
+
 static int SetPllFrequency(int fd, unsigned char command, float Fvco)
 {
 	unsigned char ucPLL_register;
@@ -2346,6 +2359,8 @@ void ReportStatus(void)
 	{
 		tcp_printf("{\"rsp\": \"ConfigFileErrorStatus\",\"value_int\": \"%d\"}", iconfigfile_error);
 	}
+	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz, TxFvco_actual);
+	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz, RxFvco_actual);
 } //ReportStatus
 
 void PowerTxPath(int ipower_on)
@@ -2633,14 +2648,14 @@ void ChangePllFrequency(char cPll, float Fpfd, float Fvco)
 	}
 	if (cPll == 'T') //Tx PLL
 	{
-		//tcp_printf("{\"rsp\": \"TxPllFrequency\",\"value_float\": \"%.1f\"}", Fvco_actual);
 		tcp_printf("{\"rsp\": \"TxPllFrequency\",\"value_int\": \"%d\",\"value_float\": \"%.1f\"}", ulTxPllDemominator, Fvco_actual);
+		TxFvco_actual = Fvco_actual;
 		ReportTxPllStatus();
 	}
 	else //Rx PLL
 	{
-		//tcp_printf("{\"rsp\": \"RxPllFrequency\",\"value_float\": \"%.1f\"}", Fvco_actual);
 		tcp_printf("{\"rsp\": \"RxPllFrequency\",\"value_int\": \"%d\",\"value_float\": \"%.1f\"}", ulRxPllDemominator, Fvco_actual);
+		RxFvco_actual = Fvco_actual;
 		ReportRxPllStatus();
 	}
 } //ChangePllFrequency
@@ -3046,6 +3061,8 @@ int parse_json_message(const char * const monitor)
     const cJSON *value_int2 = NULL;
     const cJSON *value_long = NULL;
     const cJSON *value_float = NULL;
+    const cJSON *value_float2 = NULL;
+    const cJSON *value_float3 = NULL;
     const cJSON *value_len = NULL;
     const cJSON *value_string = NULL;
     const cJSON *value_year = NULL;
@@ -3182,6 +3199,18 @@ int parse_json_message(const char * const monitor)
     {
     	sprintf (input_string, "%s", value_float->valuestring);
     	host_value_float = (atof(input_string));
+    }
+    value_float2 = cJSON_GetObjectItemCaseSensitive(message_json, "value_float2");
+    if (cJSON_IsString(value_float2) && (value_float2->valuestring != NULL))
+    {
+    	sprintf (input_string, "%s", value_float2->valuestring);
+    	host_value_float2 = (atof(input_string));
+    }
+    value_float3 = cJSON_GetObjectItemCaseSensitive(message_json, "value_float3");
+    if (cJSON_IsString(value_float3) && (value_float3->valuestring != NULL))
+    {
+    	sprintf (input_string, "%s", value_float3->valuestring);
+    	host_value_float3 = (atof(input_string));
     }
     addr = cJSON_GetObjectItemCaseSensitive(message_json, "addr");
     if (cJSON_IsString(addr) && (addr->valuestring != NULL))
@@ -3389,24 +3418,30 @@ int processJsonCommand(void)
 			ulTxPllDemominator = host_value_int;
 			if (strcmp(host_setting, "Fpfd=122.88") == 0)
 			{
-				ChangePllFrequency('T', 122.88, host_value_float);
+				fTxPllFreqFpfd_MHz = 122.88;
 			} //host_setting = "Fpfd=122.88"
 			else
 			{
-				ChangePllFrequency('T', 61.44, host_value_float);
+				fTxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
+			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, host_value_float);
+			fTxPllFreqRF_GHz = host_value_float2;
+			fTxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetTxPllFreq"
 		else if (strcmp(host_cmd, "SetRxPllFreq") == 0)
 		{
 			ulRxPllDemominator = host_value_int;
 			if (strcmp(host_setting, "Fpfd=122.88") == 0)
 			{
-				ChangePllFrequency('R', 122.88, host_value_float);
+				fRxPllFreqFpfd_MHz = 122.88;
 			} //host_setting = "Fpfd=122.88"
 			else
 			{
-				ChangePllFrequency('R', 61.44, host_value_float);
+				fRxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
+			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, host_value_float);
+			fRxPllFreqRF_GHz = host_value_float2;
+			fRxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetRxPllFreq"
 		else if (strcmp(host_cmd, "SetTxPllPower") == 0)
 		{
