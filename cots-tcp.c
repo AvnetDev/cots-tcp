@@ -2657,31 +2657,54 @@ void ChangePllPower(char cPll, unsigned char OutAEnable, int PowerA, unsigned ch
 	}
 } //ChangePllPower
 
+char eeprom_version_string[32];
 int GetPllPowerFromFreq(unsigned char ucOUTX_enabled, float ffrequency_achievedHz)
 {
 unsigned char ucBoardIsRevB;
 float ffrequency_achievedGHz = ffrequency_achievedHz / 1000000000;
 int ipower;
+long ulEepromSN = 0;
+int bEeprom_error = false;
+
 	if (ucOUTX_enabled == 0) //enabled
 	{
    		//Read the EEPROM to decide whether we have a RevB board
-		host_value_ucptr = host_value_string;
-		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, 1) ==0)
+		//From Matlab code:
+		//if str2double(app.EEPROM_DTRx2.boardSerialNum{1}.value_long) > 15 && str2double(app.EEPROM_DTRx2.boardVersion{1}.value_string) == 2
+		// app.EEPROM_DTRx2.boardRevString = 'RevB';
+		// success = true;
+		//else
+		// app.EEPROM_DTRx2.boardRevString = 'RevA';
+		// success = true;
+		//end
+   		host_value_ucptr = (unsigned char*)&ulEepromSN; // not endian safe
+		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_SERIALNUM, host_value_ucptr, 3) == 0)
 		{
-			if (strcmp(host_value_string, "RevB") == 0)
-			{
-				ucBoardIsRevB = true;
-			}
-			else
-			{
-				ucBoardIsRevB = false; //Rev A assumed
-			}
-			//tcp_printf("{\"rsp\": \"EepromBoardRevision\",\"value_string\": \"%s\"}", host_value_string);
+			//tcp_printf("{\"rsp\": \"EepromBoardSerialNum\",\"value_long\": \"%d\"}", host_value_long);
 		}
 		else
 		{ //EEPROM error
-			ucBoardIsRevB = false; //Rev A assumed
+			bEeprom_error = true;
 		} //EEPROM error
+   		host_value_ucptr = eeprom_version_string;
+		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_VERSION, host_value_ucptr, 1) ==0)
+		{
+			//tcp_printf("{\"rsp\": \"EepromBoardVersion\",\"value_string\": \"%s\"}", host_value_string);
+		}
+		else
+		{ //EEPROM error
+			bEeprom_error = true;
+		} //EEPROM error
+
+		if ((bEeprom_error == false) && (ulEepromSN > 15) && ((strcmp(eeprom_version_string, "2") == 0))) //Value of 2 indicates RevB card
+		{
+			ucBoardIsRevB = true;
+		}
+		else
+		{
+			ucBoardIsRevB = false; //Rev A assumed
+		}
+
 		if (ucBoardIsRevB)
 		{ //RevB
 			if (ffrequency_achievedGHz <= 12.0)
