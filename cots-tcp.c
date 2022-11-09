@@ -1388,9 +1388,9 @@ static int ReadEntirePll(int fd, unsigned char command, int include_address)
     return 0;
 } //ReadEntirePll()
 
-float Fvco_actual;
-float TxFvco_actual = -1.0;
-float RxFvco_actual = -1.0;
+double Fvco_actual;
+double TxFvco_actual = -1.0;
+double RxFvco_actual = -1.0;
 #define Fpd_DEFAULT 122880000 //Hz
 unsigned long ulFpfd;
 //#define DEN_DEFAULT 768
@@ -1404,7 +1404,7 @@ float fRxPllFreqIF_GHz = -1.0; //Just to store here so the host can recall it if
 float fRxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
 float fTxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
 
-static int SetPllFrequency(int fd, unsigned char command, float Fvco)
+static int SetPllFrequency(int fd, unsigned char command, double Fvco)
 {
 	unsigned char ucPLL_register;
 	tcp_printf("Fvco : %g\n", Fvco);
@@ -1415,8 +1415,8 @@ static int SetPllFrequency(int fd, unsigned char command, float Fvco)
 	//Then N = INT(Fvco/Fpfd) and NUM =  DEN x (Fvco/Fpfd � N)
 	//For any VCO frequency > 15GHz, we�ll have to use the doubler (reg 27) and disable the OUTB, which unfortunately doesn�t have that option. A bit of a bummer, but we don�t have much other choice at this point.
 	//I�m ok if we write these registers manually after the first chip initialization, especially during the debug phase. But if it�s not too much to add a script to automatically set them based on a set of selectable options (like FVCO, OUTA EN/DIS, OUTB EN/DIS, OUT PWR), that would help speed up the test phase.
-	double floatN = (Fvco/ulFpfd);
-	unsigned long intN = (int)(floatN);
+	double doubleN = (Fvco/ulFpfd);
+	unsigned long intN = (int)(doubleN);
 	unsigned long ulPllDemominator;
 	if (command == CMD_ACCESS_TX_PLL)
 	{
@@ -1426,11 +1426,11 @@ static int SetPllFrequency(int fd, unsigned char command, float Fvco)
 	{
 		ulPllDemominator = ulRxPllDemominator;
 	}
-	double floatNUM = ulPllDemominator * (floatN - intN);
-	unsigned long NUM = (unsigned long)(floatNUM);
+	double doubleNUM = ulPllDemominator * (doubleN - intN);
+	unsigned long NUM = (unsigned long)(doubleNUM);
 	tcp_printf("fixed numbers: Fpfd = %i Hz, DEN = %i\n", ulFpfd, ulPllDemominator);
-	tcp_printf("floatN = (Fvco/Fpd) = %g , intN = (int)(floatN) = %i\n", floatN, intN);
-	tcp_printf("NUM = DEN * (floatN - intN) = %i\n", NUM);
+	tcp_printf("doubleN = (Fvco/Fpd) = %g , intN = (int)(doubleN) = %i\n", doubleN, intN);
+	tcp_printf("NUM = DEN * (doubleN - intN) = %i\n", NUM);
     //Update intN registers
     unsigned int INTN_MSW = (unsigned int)((intN & 0x00070000) >> 16);
     unsigned int INTN_LSW = (unsigned int)((intN & 0x0000FFFF) >> 0);
@@ -1444,7 +1444,7 @@ static int SetPllFrequency(int fd, unsigned char command, float Fvco)
     unsigned int iPLL_DEN_MSW = (unsigned int)((ulPllDemominator & 0xFFFF0000) >> 16);
     unsigned int iPLL_DEN_LSW = (unsigned int)((ulPllDemominator & 0x0000FFFF) >> 0);
     //Calculate the actual Fvco (which will be different after the rounding:
-    Fvco_actual = ulFpfd * ((float)intN + ((float)NUM/(float)ulPllDemominator));
+    Fvco_actual = ulFpfd * ((double)intN + ((double)NUM/(double)ulPllDemominator));
     //Write the PLL_DEN fields:
     ucPLL_register = 38; //PLL_DEN[31:16]
     WritePllRegisterViaSpi(fd, command, ucPLL_register, iPLL_DEN_MSW, false);
@@ -1485,7 +1485,7 @@ static int ParsePllParameterLine(int fd, unsigned char command, char * instring)
 	{
 		char *numtringinfile = strstr(instring, "= ");
 	    //int number=(int)strtol(numtringinfile+2, NULL, 0);
-		float Fvco=strtof(numtringinfile+2, NULL);
+		double Fvco=strtof(numtringinfile+2, NULL);
 	    SetPllFrequency(fd, command, Fvco);
 	}
 
@@ -2610,7 +2610,7 @@ void PowerDownAll(void)
 	tcp_printf("Both Tx and Rx paths should now be powered down\n");
 } //PowerDownAll
 
-void ChangePllFrequency(char cPll, float Fpfd, float Fvco)
+void ChangePllFrequency(char cPll, float Fpfd, double Fvco)
 {
 	tcp_printf("FpFd = %gMHz.  The new LO frequency in Hz = %g\n", Fpfd, Fvco);
 	//tcp_printf("FpFd = %gMHz.  The new LO frequency in Hz = %.0f\n", Fpfd, Fvco);
@@ -2702,10 +2702,10 @@ void ChangePllPower(char cPll, unsigned char OutAEnable, int PowerA, unsigned ch
 } //ChangePllPower
 
 char eeprom_version_string[32];
-int GetPllPowerFromFreq(unsigned char ucOUTX_enabled, float ffrequency_achievedHz)
+int GetPllPowerFromFreq(unsigned char ucOUTX_enabled, double dfrequency_achievedHz)
 {
 unsigned char ucBoardIsRevB;
-float ffrequency_achievedGHz = ffrequency_achievedHz / 1000000000;
+double dfrequency_achievedGHz = dfrequency_achievedHz / (double)1000000000;
 int ipower;
 long ulEepromSN = 0;
 int bEeprom_error = false;
@@ -2751,31 +2751,31 @@ int bEeprom_error = false;
 
 		if (ucBoardIsRevB)
 		{ //RevB
-			if (ffrequency_achievedGHz <= 12.0)
+			if (dfrequency_achievedGHz <= 12.0)
 			{
 				ipower = 20;
 			}
-			else if (ffrequency_achievedGHz < 12.65)
+			else if (dfrequency_achievedGHz < 12.65)
 			{
 				ipower = 5;
 			}
-			else if (ffrequency_achievedGHz > 13.65)
+			else if (dfrequency_achievedGHz > 13.65)
 			{
 				ipower = 15;
 			}
 			else
 			{
-				float fpower = 10 * ffrequency_achievedGHz - 121.5;
-				ipower = (int)(fpower + 0.5); //Round to closest integer by adding 0.5 and truncating
+				double dpower = (double)10 * dfrequency_achievedGHz - (double)121.5;
+				ipower = (int)(dpower + (double)0.5); //Round to closest integer by adding 0.5 and truncating
 			}
 		} //RevB
 		else
 		{ //not RevB (assumed RevA)
-			if (ffrequency_achievedGHz < 12.1)
+			if (dfrequency_achievedGHz < 12.1)
 			{
 				ipower = 20;
 			}
-			else if (ffrequency_achievedGHz <= 12.9)
+			else if (dfrequency_achievedGHz <= 12.9)
 			{
 				ipower = 5;
 			}
@@ -3540,7 +3540,7 @@ int processJsonCommand(void)
 			{
 				fTxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
-			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, host_value_float);
+			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, (double)host_value_float);
 			fTxPllFreqRF_GHz = host_value_float2;
 			fTxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetTxPllFreq"
@@ -3555,7 +3555,7 @@ int processJsonCommand(void)
 			{
 				fRxPllFreqFpfd_MHz = 61.44;
 			} //host_setting = "Fpfd=61.44"
-			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, host_value_float);
+			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, (double)host_value_float);
 			fRxPllFreqRF_GHz = host_value_float2;
 			fRxPllFreqIF_GHz = host_value_float3;
 		} //host_cmd = "SetRxPllFreq"
