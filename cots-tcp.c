@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 26
+#define PS_VERSION_LSB 27
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
