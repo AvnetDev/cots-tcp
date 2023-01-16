@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 27
+#define PS_VERSION_LSB 28
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
@@ -94,6 +94,7 @@ int  host_value_len;
 float  host_value_float = -1;
 float  host_value_float2 = -1;
 float  host_value_float3 = -1;
+float  host_value_float4 = -1;
 char host_value_string[32];
 int  host_value_string_len;
 char host_value_string_year[3];
@@ -1401,6 +1402,8 @@ float fTxPllFreqRF_GHz = -1.0; //Just to store here so the host can recall it if
 float fTxPllFreqIF_GHz = -1.0; //Just to store here so the host can recall it if necessary
 float fRxPllFreqRF_GHz = -1.0; //Just to store here so the host can recall it if necessary
 float fRxPllFreqIF_GHz = -1.0; //Just to store here so the host can recall it if necessary
+float fTxPll_IF_BW_MHz = -1.0; //Just to store here so the host can recall it if necessary
+float fRxPll_IF_BW_MHz = -1.0; //Just to store here so the host can recall it if necessary
 float fRxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
 float fTxPllFreqFpfd_MHz = -1.0; //Just to store here so the host can recall it if necessary
 
@@ -2359,8 +2362,8 @@ void ReportStatus(void)
 	{
 		tcp_printf("{\"rsp\": \"ConfigFileErrorStatus\",\"value_int\": \"%d\"}", iconfigfile_error);
 	}
-	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz, TxFvco_actual);
-	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz, RxFvco_actual);
+	tcp_printf("{\"rsp\": \"TxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\",\"value_float5\": \"%.3f\"}", fTxPllFreqFpfd_MHz, ulTxPllDemominator, fTxPllFreqRF_GHz, fTxPllFreqIF_GHz, TxFvco_actual, fTxPll_IF_BW_MHz);
+	tcp_printf("{\"rsp\": \"RxPllFreqStatus\",\"value_float\": \"%.3f\",\"value_int\": \"%d\",\"value_float2\": \"%.3f\",\"value_float3\": \"%.3f\",\"value_float4\": \"%.3f\",\"value_float5\": \"%.3f\"}", fRxPllFreqFpfd_MHz, ulRxPllDemominator, fRxPllFreqRF_GHz, fRxPllFreqIF_GHz, RxFvco_actual, fRxPll_IF_BW_MHz);
 } //ReportStatus
 
 void PowerTxPath(int ipower_on)
@@ -3179,6 +3182,7 @@ int parse_json_message(const char * const monitor)
     const cJSON *value_float = NULL;
     const cJSON *value_float2 = NULL;
     const cJSON *value_float3 = NULL;
+    const cJSON *value_float4 = NULL;
     const cJSON *value_len = NULL;
     const cJSON *value_string = NULL;
     const cJSON *value_year = NULL;
@@ -3327,6 +3331,12 @@ int parse_json_message(const char * const monitor)
     {
     	sprintf (input_string, "%s", value_float3->valuestring);
     	host_value_float3 = (atof(input_string));
+    }
+    value_float4 = cJSON_GetObjectItemCaseSensitive(message_json, "value_float4");
+    if (cJSON_IsString(value_float4) && (value_float4->valuestring != NULL))
+    {
+    	sprintf (input_string, "%s", value_float4->valuestring);
+    	host_value_float4 = (atof(input_string));
     }
     addr = cJSON_GetObjectItemCaseSensitive(message_json, "addr");
     if (cJSON_IsString(addr) && (addr->valuestring != NULL))
@@ -3543,6 +3553,7 @@ int processJsonCommand(void)
 			ChangePllFrequency('T', fTxPllFreqFpfd_MHz, (double)host_value_float);
 			fTxPllFreqRF_GHz = host_value_float2;
 			fTxPllFreqIF_GHz = host_value_float3;
+			fTxPll_IF_BW_MHz = host_value_float4;
 		} //host_cmd = "SetTxPllFreq"
 		else if (strcmp(host_cmd, "SetRxPllFreq") == 0)
 		{
@@ -3558,6 +3569,7 @@ int processJsonCommand(void)
 			ChangePllFrequency('R', fRxPllFreqFpfd_MHz, (double)host_value_float);
 			fRxPllFreqRF_GHz = host_value_float2;
 			fRxPllFreqIF_GHz = host_value_float3;
+			fRxPll_IF_BW_MHz = host_value_float4;
 		} //host_cmd = "SetRxPllFreq"
 		else if (strcmp(host_cmd, "SetTxPllPower") == 0)
 		{
