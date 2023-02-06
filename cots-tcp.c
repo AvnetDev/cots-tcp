@@ -51,7 +51,7 @@
 #include "expander.h"
 #include "zed-spi.h"
 
-#define PS_VERSION_MSB 2
+#define PS_VERSION_MSB 3
 #define PS_VERSION_LSB 29
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
