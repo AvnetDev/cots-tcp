@@ -52,7 +52,7 @@
 #include "zed-spi.h"
 
 #define PS_VERSION_MSB 2
-#define PS_VERSION_LSB 28
+#define PS_VERSION_LSB 29
 #define INITCFG_JSON_FILENAME_DEFAULT "dtrx2_init.cfg"
 
 /* --- Start Functionality for JSON messages --- */
@@ -142,6 +142,7 @@ unsigned char ucPmod1Status;
 #define CMD_SET_PMOD1_PINS		0x15
 #define CMD_SET_PMOD0_SOFT_EN	0x16
 #define CMD_SET_PMOD1_SOFT_EN	0x17
+#define CMD_SET_PLL_BUSY_STATUS	0x18
 
 #define CHIP_ID					0x20
 
@@ -288,6 +289,7 @@ int WritePllDataViaSpi(int fd, unsigned char command, int len, unsigned char* pl
 	return true;
 } //WritePllDataViaSpi
 
+#if (0) //unused
 static int Lmx2595UpdateFreq(int fd, unsigned char command, unsigned int r[LMX2594_A_count]) {
   int Index = 0;
   int val;
@@ -347,6 +349,39 @@ int WritePllSetViaSpi(int fd, unsigned char command, int freq)
 	flash_comms_LED(fd, 100000); //100 ms
 	return true;
 } //WritePllSetViaSpi()
+#endif
+
+//This is so that the PL will know whether the PLL locked status can be trusted.
+//While reading back from a PLL, the MUXOUT pin is changed to be a data pin and not Lock Detect.
+//So the bits below will reflect the status of the register bit R0[2] = MUXOUT_LD_SEL, i.e. whether the locked status is valid.
+//We are setting them in the PL to qualify the PLL_READY outputs of the VHDL, which will cause Tx or Rx to be inhibited elsewhere if the associated PLL is not locked.
+unsigned char bRxPllLockedStatusValid = true;
+unsigned char bTxPllLockedStatusValid = true;
+void WritePllBusyStatus()
+{
+	int iPllBusyStatus = (bTxPllLockedStatusValid << 1) + (bRxPllLockedStatusValid << 0);
+    int index = 0;
+	WriteBuffer[index++] = CHIP_ID;
+  	WriteBuffer[index++] = CMD_SET_PLL_BUSY_STATUS;
+	WriteBuffer[index++] = 0; //Start address LSB
+	WriteBuffer[index++] = 1; //Length
+   	WriteBuffer[index++] = iPllBusyStatus;
+   	WriteBuffer[index++] = 0xFF; //Processing byte
+   	transfer(spi_fd, WriteBuffer, ReadBuffer, index);
+} //WritePllBusyStatus
+
+void SetPllBusyWithReadbackStatus(unsigned char command, unsigned char bPll_busy)
+{
+	if (command == CMD_ACCESS_TX_PLL)
+	{
+		bTxPllLockedStatusValid = !bPll_busy;
+	}
+	else
+	{
+		bRxPllLockedStatusValid = !bPll_busy;
+	}
+	WritePllBusyStatus();
+} //SetPllBusyWithReadbackStatus
 
 int WritePllRegisterViaSpi(int fd, unsigned char command, unsigned char ucaddress, int ivalue, int must_flash_LED)
 {
@@ -364,10 +399,12 @@ int WritePllRegisterViaSpi(int fd, unsigned char command, unsigned char ucaddres
 
 #define PLL_REG0_DEFAULT		0x2498 //LMX2595 default register
 #define PLL_LOCKED_BIT_ENABLE	0x04 //bit to allow 0 = readback on MUXOUT pin instead of 1 = "locked" bit, which is the default
-int ReadPllRegisterViaSpi(int fd, unsigned char command, unsigned char ucaddress, int must_flash_LED)
+//PLL register R0[2] MUXOUT_LD_SEL Selects the state of the function of the MUXout pin (0 => Readback, 1 => Lock detect
+int ReadPllRegisterViaSpi(int fd, unsigned char command, unsigned char ucaddress, int must_toggle_muxuout)
 {
-    if (must_flash_LED)
+    if (must_toggle_muxuout)
     {
+    	SetPllBusyWithReadbackStatus(command, true);
     	WritePllRegisterViaSpi(fd, command, 0, PLL_REG0_DEFAULT, false); //disable LOCKED bit on muxout pin
     }
 	unsigned char tx_array[3];
@@ -380,9 +417,10 @@ int ReadPllRegisterViaSpi(int fd, unsigned char command, unsigned char ucaddress
    	ucValueMSB = ReadBuffer[6 + 1];
    	ucValueLSB = ReadBuffer[6 + 2];
     unsigned int iValue = (ucValueMSB << 8) + ucValueLSB;
-    if (must_flash_LED)
+    if (must_toggle_muxuout)
     {
         WritePllRegisterViaSpi(fd, command, 0, (PLL_REG0_DEFAULT | PLL_LOCKED_BIT_ENABLE), false); //re-enable LOCKED bit on muxout pin
+        SetPllBusyWithReadbackStatus(command, false);
     	flash_comms_LED(fd, 80000); //80 ms
     }
    	return iValue;
@@ -1331,6 +1369,7 @@ static int LoadPllFile(int fd, int get_user_input, unsigned int echo, unsigned c
         printf("Cannot open that file name!\n");
         return(-1);
     }
+    SetPllBusyWithReadbackStatus(command, true);
     //Reset PLL:
     //RESET = 1 (R0 bit 1 = 1)
     WritePllRegisterViaSpi(fd, command, 0, 2, false);
@@ -1359,6 +1398,7 @@ static int LoadPllFile(int fd, int get_user_input, unsigned int echo, unsigned c
 	usleep(10000); //microseconds
     //Program register R0 one additional time with FCAL_EN = 1:
     WritePllRegisterViaSpi(fd, command, 0, (PLL_REG0_DEFAULT | PLL_LOCKED_BIT_ENABLE), true);
+    SetPllBusyWithReadbackStatus(command, false);
 	fflush(stdout); // Prints to screen or whatever your standard out is
     return 0;
 } //LoadPllFile()
@@ -1369,6 +1409,7 @@ static int ReadEntirePll(int fd, unsigned char command, int include_address)
 	int iPLL_value;
 	//for (ucPLL_register = 0; ucPLL_register < LMX2594_A_count; ucPLL_register++) {
 	ucPLL_register = (LMX2594_A_count-1);
+	SetPllBusyWithReadbackStatus(command, true);
 	WritePllRegisterViaSpi(fd, command, 0, PLL_REG0_DEFAULT, true); //disable LOCKED bit on muxout pin
 	while (ucPLL_register >= 0)
 	{
@@ -1386,6 +1427,7 @@ static int ReadEntirePll(int fd, unsigned char command, int include_address)
 		ucPLL_register--;
 	}
     WritePllRegisterViaSpi(fd, command, 0, (PLL_REG0_DEFAULT | PLL_LOCKED_BIT_ENABLE), false); //re-enable LOCKED bit on muxout pin
+    SetPllBusyWithReadbackStatus(command, false);
     return 0;
 } //ReadEntirePll()
 
@@ -1434,7 +1476,8 @@ static int SetPllFrequency(int fd, unsigned char command, double Fvco)
 	tcp_printf("fixed numbers: Fpfd = %i Hz, DEN = %i\n", ulFpfd, ulPllDemominator);
 	tcp_printf("doubleN = (Fvco/Fpd) = %g , intN = (int)(doubleN) = %i\n", doubleN, intN);
 	tcp_printf("NUM = DEN * (doubleN - intN) = %i\n", NUM);
-    //Update intN registers
+	SetPllBusyWithReadbackStatus(command, true); //This may not be necessary
+	//Update intN registers
     unsigned int INTN_MSW = (unsigned int)((intN & 0x00070000) >> 16);
     unsigned int INTN_LSW = (unsigned int)((intN & 0x0000FFFF) >> 0);
     ucPLL_register = 34; //PLL_N[18:16]
@@ -1458,11 +1501,13 @@ static int SetPllFrequency(int fd, unsigned char command, double Fvco)
     WritePllRegisterViaSpi(fd, command, ucPLL_register, NUM_MSW, false);
     ucPLL_register = 43; //PLL_NUM[15:0]
     WritePllRegisterViaSpi(fd, command, ucPLL_register, NUM_LSW, false);
-    //Write CAL bit to 1 again:
+    //Set the FCAL_EN bit in R0 to 1 again:
     WritePllRegisterViaSpi(fd, command, 0, (PLL_REG0_DEFAULT | PLL_LOCKED_BIT_ENABLE), true);
+    SetPllBusyWithReadbackStatus(command, false);
 	return true;
 } //SetPllFrequency()
 
+#if(0) //not used anymore
 static int ParsePllParameterLine(int fd, unsigned char command, char * instring)
 {
 	int iOldPLL_value;
@@ -1592,6 +1637,7 @@ static int LoadPllParams(int fd, unsigned char command)
 	fflush(stdout); // Prints to screen or whatever your standard out is
     return 0;
 } //LoadPllParams()
+#endif
 
 static int ReadBackPllStatus(int fd, unsigned char command)
 {
@@ -1699,7 +1745,7 @@ static int ReadBackPllStatus(int fd, unsigned char command)
 	//Reads back the actual CAPCTRL capcode value the VCO calibration has chosen.
 	printf("CAPCTRL capcode value the VCO calibration has chosen = %d\n", irb_VCO_CAPCTRL);
 
-	int irb_VCO_DACISET = (iReg112value & 0x01FF) >> 0; //R112[8:0]
+	//int irb_VCO_DACISET = (iReg112value & 0x01FF) >> 0; //R112[8:0]
 	//printf("rb_VCO_DACISET = %d\n", irb_VCO_DACISET);
 	//Reads back the actual amplitude (DACISET) value that the VCO calibration has chosen.
 	printf("The actual amplitude (DACISET) value that the VCO calibration has chosen = %d\n", irb_VCO_CAPCTRL);
@@ -1813,7 +1859,7 @@ static int ReadBackPllStatusForTcp(int fd, unsigned char command)
 	//Reads back the actual CAPCTRL capcode value the VCO calibration has chosen.
 	tcp_printf("CAPCTRL capcode value the VCO calibration has chosen = %d\n", irb_VCO_CAPCTRL);
 
-	int irb_VCO_DACISET = (iReg112value & 0x01FF) >> 0; //R112[8:0]
+	//int irb_VCO_DACISET = (iReg112value & 0x01FF) >> 0; //R112[8:0]
 	//printf("rb_VCO_DACISET = %d\n", irb_VCO_DACISET);
 	//Reads back the actual amplitude (DACISET) value that the VCO calibration has chosen.
 	tcp_printf("The actual amplitude (DACISET) value that the VCO calibration has chosen = %d\n", irb_VCO_CAPCTRL);
@@ -1885,6 +1931,9 @@ static int ReportPllPower(unsigned char command)
     return 0;
 } //ReportPllPower()
 
+unsigned char bRxPllReady; //Rx PLL is locked and the Locked bit is valid
+unsigned char bTxPllReady; //Tx PLL is locked and the Locked bit is valid
+
 #define USE_PLL_MUXOUT_FOR_LOCK_DETECT
 static int CheckPllLocked(int fd, unsigned char command)
 {
@@ -1914,7 +1963,9 @@ static int CheckPllLocked(int fd, unsigned char command)
    	   	LockedBit = (FeedbackByte & 0x02) >> 1; //bit 1 = PLL_MUXOUT_TXX
    	  	printf("Tx PLL Locked bit = %d\r\n", LockedBit);
    	}
-	if (LockedBit == 1)  //If the MUXOUT pin is high
+   	bRxPllReady = (FeedbackByte & 0x04) >> 2; //bit 2 = RxPllReady
+   	bTxPllReady = (FeedbackByte & 0x08) >> 3; //bit 3 = TxPllReady
+   	if (LockedBit == 1)  //If the MUXOUT pin is high
 	{
 		return true;
 	}
@@ -2733,7 +2784,7 @@ int bEeprom_error = false;
 		{ //EEPROM error
 			bEeprom_error = true;
 		} //EEPROM error
-   		host_value_ucptr = eeprom_version_string;
+   		host_value_ucptr = (unsigned char *)eeprom_version_string;
 		if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_VERSION, host_value_ucptr, 1) ==0)
 		{
 			//tcp_printf("{\"rsp\": \"EepromBoardVersion\",\"value_string\": \"%s\"}", host_value_string);
@@ -3770,7 +3821,7 @@ int processJsonCommand(void)
 		} //host_cmd = "GetEepromRxIfMin"
 		else if (strcmp(host_cmd, "SetEepromBoardName") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_NAME, host_value_ucptr, host_value_string_len);
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_NAME, host_value_ucptr, 8) ==0)
 			{
@@ -3779,7 +3830,7 @@ int processJsonCommand(void)
 		} //host_cmd = "SetEepromBoardName"
 		else if (strcmp(host_cmd, "GetEepromBoardName") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_NAME, host_value_ucptr, 8) ==0)
 			{
 				tcp_printf("{\"rsp\": \"EepromBoardName\",\"value_string\": \"%s\"}", host_value_string);
@@ -3787,7 +3838,7 @@ int processJsonCommand(void)
 		} //host_cmd = "GetEepromBoardName"
 		else if (strcmp(host_cmd, "SetEepromBoardVersion") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_VERSION, host_value_ucptr, host_value_string_len);
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_VERSION, host_value_ucptr, 1) ==0)
 			{
@@ -3796,7 +3847,7 @@ int processJsonCommand(void)
 		} //host_cmd = "SetEepromBoardVersion"
 		else if (strcmp(host_cmd, "GetEepromBoardVersion") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_VERSION, host_value_ucptr, 1) ==0)
 			{
 				tcp_printf("{\"rsp\": \"EepromBoardVersion\",\"value_string\": \"%s\"}", host_value_string);
@@ -3804,7 +3855,7 @@ int processJsonCommand(void)
 		} //host_cmd = "GetEepromBoardVersion"
 		else if (strcmp(host_cmd, "SetEepromBoardRevision") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, host_value_string_len);
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, 1) ==0)
 			{
@@ -3813,7 +3864,7 @@ int processJsonCommand(void)
 		} //host_cmd = "SetEepromBoardRevision"
 		else if (strcmp(host_cmd, "GetEepromBoardRevision") == 0)
 		{
-	   		host_value_ucptr = host_value_string;
+	   		host_value_ucptr = (unsigned char *)host_value_string;
 			if (ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_REVISION, host_value_ucptr, 1) ==0)
 			{
 				tcp_printf("{\"rsp\": \"EepromBoardRevision\",\"value_string\": \"%s\"}", host_value_string);
@@ -3838,31 +3889,31 @@ int processJsonCommand(void)
 		} //host_cmd = "SetEepromBoardSerialNum"
 		else if (strcmp(host_cmd, "SetEepromBoardDate") == 0)
 		{
-			host_value_ucptr = host_value_string_year;
+			host_value_ucptr = (unsigned char *)host_value_string_year;
 	    		host_value_string_len = strlen(host_value_string_year);
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_YEAR, host_value_ucptr, host_value_string_len);
-			host_value_ucptr = host_value_string_month;
+			host_value_ucptr = (unsigned char *)host_value_string_month;
 	    		host_value_string_len = strlen(host_value_string_month);
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_MONTH, host_value_ucptr, host_value_string_len);
-			host_value_ucptr = host_value_string_day;
+			host_value_ucptr = (unsigned char *)host_value_string_day;
 	    		host_value_string_len = strlen(host_value_string_day);
 			WriteEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_DAY, host_value_ucptr, host_value_string_len);
 			//Read back the date:
-			host_value_ucptr = host_value_string_year;
+			host_value_ucptr = (unsigned char *)host_value_string_year;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_YEAR, host_value_ucptr, 2);
-			host_value_ucptr = host_value_string_month;
+			host_value_ucptr = (unsigned char *)host_value_string_month;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_MONTH, host_value_ucptr, 2);
-			host_value_ucptr = host_value_string_day;
+			host_value_ucptr = (unsigned char *)host_value_string_day;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_DAY, host_value_ucptr, 2);
 			tcp_printf("{\"rsp\": \"EepromBoardDate\",\"value_year\": \"%s\",\"value_month\": \"%s\",\"value_day\": \"%s\"}", host_value_string_year, host_value_string_month, host_value_string_day);
 		} //host_cmd = "SetEepromBoardDate"
 		else if (strcmp(host_cmd, "GetEepromBoardDate") == 0)
 		{
-			host_value_ucptr = host_value_string_year;
+			host_value_ucptr = (unsigned char *)host_value_string_year;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_YEAR, host_value_ucptr, 2);
-			host_value_ucptr = host_value_string_month;
+			host_value_ucptr = (unsigned char *)host_value_string_month;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_MONTH, host_value_ucptr, 2);
-			host_value_ucptr = host_value_string_day;
+			host_value_ucptr = (unsigned char *)host_value_string_day;
 			ReadEeprom_Multiple(EEPROM_ADDRESS_BOARD_DATE_DAY, host_value_ucptr, 2);
 			tcp_printf("{\"rsp\": \"EepromBoardDate\",\"value_year\": \"%s\",\"value_month\": \"%s\",\"value_day\": \"%s\"}", host_value_string_year, host_value_string_month, host_value_string_day);
 		} //host_cmd = "GetEepromBoardDate"
